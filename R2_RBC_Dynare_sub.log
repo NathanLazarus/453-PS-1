@@ -1,0 +1,65 @@
+Starting Dynare (version 5.3).
+Calling Dynare with arguments: noclearall
+Starting preprocessing of the model file ...
+Found 4 equation(s).
+Evaluating expressions...done
+Computing static model derivatives (order 1).
+Computing dynamic model derivatives (order 1).
+Processing outputs ...
+done
+Preprocessing completed.
+
+
+STEADY-STATE RESULTS:
+
+lnc 		 0.673514
+lnn 		 -0.143687
+lnz 		 0
+lnk 		 2.98712
+
+MODEL SUMMARY
+
+  Number of variables:         4
+  Number of stochastic shocks: 1
+  Number of state variables:   2
+  Number of jumpers:           2
+  Number of static variables:  1
+
+
+MATRIX OF COVARIANCE OF EXOGENOUS SHOCKS
+Variables         e_z
+e_z          1.000000
+
+POLICY AND TRANSITION FUNCTIONS
+                                 lnz             lnc             lnn             lnk
+Constant                           0        0.673514       -0.143687        2.987115
+lnk(-1)                            0        0.533476       -0.343869        0.935078
+lnz(-1)                     0.900000        0.314853        1.003683        0.163322
+e_z                         1.000000        0.349837        1.115203        0.181469
+
+
+THEORETICAL MOMENTS
+VARIABLE         MEAN  STD. DEV.   VARIANCE
+lnz            0.0000     2.2942     5.2632
+lnc            0.6735     2.6895     7.2333
+lnn           -0.1437     2.0690     4.2806
+lnk            2.9871     4.0046    16.0367
+
+
+
+MATRIX OF CORRELATIONS
+Variables       lnz     lnc     lnn     lnk
+lnz          1.0000  0.7675  0.8435  0.6562
+lnc          0.7675  1.0000  0.3031  0.9874
+lnn          0.8435  0.3031  1.0000  0.1482
+lnk          0.6562  0.9874  0.1482  1.0000
+
+
+
+COEFFICIENTS OF AUTOCORRELATION
+Order          1       2       3       4       5
+lnz       0.9000  0.8100  0.7290  0.6561  0.5905
+lnc       0.9904  0.9759  0.9574  0.9356  0.9112
+lnn       0.8401  0.7001  0.5778  0.4710  0.3781
+lnk       0.9965  0.9870  0.9727  0.9543  0.9326
+Total computing time : 0h00m01s

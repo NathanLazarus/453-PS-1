@@ -1,0 +1,287 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% RBC model
+% Solved by Linearization w/ Dynare
+% For 14.453, Recitation 2
+%
+% Name: R2_RBC_Dynare.m
+% This version: 02/16/2023
+% Shinnosuke Kikuchi
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+%% HOUSEKEEPING
+
+clc
+clear all
+close all
+
+warning('off','MATLAB:dispatcher:nameConflict')
+
+path = 'C:/Users/Nathan/Downloads/R2_code/R2_code';
+
+cd([ path ]);
+
+%% Provide parameter values
+run R2_load_param_RBC.m
+
+%% First run Dynare
+dynare R2_RBC_Dynare_sub.mod noclearall
+
+% To do this, you have to replace the file "disp_dr.m" with alternatives I
+% uploaded on Canvas. I made a change to save the policy functuion, exactly
+% the way Dynare now writes them to the screen, following Prof. Wouter
+% DenHaan's code for older versions of Dynare
+load dynarerocks.mat
+
+%% Discretize the shock AR(1) into Markov process, S states
+S = 10;  % Number of states - set to 1 to see the policy functions of the neoclassical growth model with labor supply
+if S>1
+    [log_z,Pr] = tauchen(S,0,rho_z,shock,sigma_z);
+    z = A*exp(log_z);
+
+    % Find the stationary distribution of the chain
+    pr = ones(1,S)/S;                       
+    diff=1;
+    while diff>tol
+        pri=pr*Pr;
+        diff=max(abs(pri-pr));
+        pr=pri;
+    end
+    zss=pr*z;
+else
+    z=1;
+    zss=1;
+    Pr=1;
+    pr=1;
+end
+
+%% Get Steady states
+kss     = (((1/beta - 1 + delta)/alpha)/A)^(1/(alpha-1)); % compute steady state
+css     = A*kss^alpha-delta*kss; % steady state consumption
+nss     = 1;
+yss     = A*kss^alpha*nss^(1-alpha);
+xss     = yss-css;
+
+%% Grid for capital today
+kt = linspace(0.5*kss,2*kss, gridsize-1);
+ikss=find(kt<kss, 1, 'last');
+k=[kt(1:ikss), kss, kt(ikss+1:end)];
+ikss=ikss+1;
+
+%% Recover policy functions
+% Deviations from SS
+polC = zeros(gridsize,S); polN = zeros(gridsize,S); polH=zeros(gridsize,S);
+for s=1:S
+    for i=1:gridsize
+        polC(i,s)=decision(2,2)*(log(k(i))-log(kss))+decision(3,2)*(log(z(s)));
+        polN(i,s)=decision(2,3)*(log(k(i))-log(kss))+decision(3,3)*(log(z(s)));
+        polH(i,s)=decision(2,4)*(log(k(i))-log(kss))+decision(3,4)*(log(z(s)));
+    end
+end
+ 
+%% What follows is my code --Nathan
+
+rng("default")
+n_periods = 200;
+n_sims = 100;
+initial_z_values = zeros(1,n_sims);
+initial_k_values = zeros(1,n_sims) + log(kss);
+log_z_values = zeros(n_periods, n_sims);
+log_k_values= zeros(n_periods, n_sims) + initial_k_values;
+log_c_values= zeros(n_periods, n_sims);
+log_n_values= zeros(n_periods, n_sims);
+epsilon_values = normrnd(0,sigma_z,[n_periods, n_sims]);
+
+% It's a little strange in this case that it creates a decision rule that depends separately
+% on z_{t-1} and epsilon instead of z_t, which is a state variable and contains all the information
+% you get from z_{t-1} and epsilon. My intuition is that it would be slightly worse, because you get the
+% linear approximation error on both, so not good for large epsilon shocks.  But it's not a big deal.
+% The timing also appears non-standard, in that I see epsilon_t when I choose k_t.
+% I have no idea why decision(1,2) is different from the steady state value; I thought it was a stochastic
+% steady state thing but everything here is to first order. I ignore it and use the deterministic steady state.
+% decision(2,2) is the coefficient on k_{t-1} and
+% decision(3,2) is the coefficient on z_{t-1} and decision(4,2) is the coefficient on epsilon_t.
+for i=1:n_periods
+    if i == 1
+        log_z_values(i,:) = rho_z * initial_z_values + epsilon_values(i,:);
+        log_c_values(i,:) = log(css) + decision(2,2)*(initial_k_values - log(kss))+decision(3,2)*initial_z_values + decision(4,2)*epsilon_values(i,:);
+        log_n_values(i,:) = log(nss) + decision(2,3)*(initial_k_values - log(kss))+decision(3,3)*initial_z_values + decision(4,3)*epsilon_values(i,:);
+        log_k_values(i,:) = log(kss) + decision(2,4)*(initial_k_values - log(kss))+decision(3,4)*initial_z_values + decision(4,4)*epsilon_values(i,:);
+    else
+        log_z_values(i,:) = rho_z * log_z_values(i-1, :) + epsilon_values(i,:);
+        log_c_values(i,:) = log(css) + decision(2,2)*(log_k_values(i - 1,:) - log(kss))+decision(3,2)*log_z_values(i - 1,:) + decision(4,2)*epsilon_values(i,:);
+        log_n_values(i,:) = log(nss) + decision(2,3)*(log_k_values(i - 1,:) - log(kss))+decision(3,3)*log_z_values(i - 1,:) + decision(4,3)*epsilon_values(i,:);
+        log_k_values(i,:) = log(kss) + decision(2,4)*(log_k_values(i - 1,:) - log(kss))+decision(3,4)*log_z_values(i - 1,:) + decision(4,4)*epsilon_values(i,:);
+    end
+end
+
+k_values = exp(log_k_values);
+c_values = exp(log_c_values);
+n_values = exp(log_n_values);
+z_values = exp(log_z_values);
+
+y_values = z_values.*k_values.^alpha.*n_values.^(1-alpha);
+i_values = k_values - (1 - delta).*[exp(initial_k_values); k_values(1:end-1,:)];
+w_values = (1-alpha) .* z_values .* (k_values ./ n_values).^alpha;
+r_values = alpha .* z_values .* (n_values ./ k_values).^(1 - alpha) - delta;
+
+[trend_output,cyclical_output] = hpfilter(y_values,1600);
+[trend_consumption,cyclical_consumption] = hpfilter(y_values,1600);
+
+
+%% Plot Sequence
+time=linspace(1,n_periods,n_periods)';
+figure('Name','Simulated Business Cycle')
+t = tiledlayout(2,3);
+nexttile
+plot(time, z_values(:,1),'LineWidth',3,'MarkerSize',10);
+title('TFP')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, c_values(:,1),'LineWidth',3,'MarkerSize',10);
+title('Consumption')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, r_values(:,1),'LineWidth',3,'MarkerSize',10);
+title('Interest Rates')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, y_values(:,1),'LineWidth',3,'MarkerSize',10);
+title('Output')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, n_values(:,1),'LineWidth',3,'MarkerSize',10);
+title('Employment')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, k_values(:,1),'LineWidth',3,'MarkerSize',10);
+title('Capital')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+filename=['Sequences_for_Q3', '.png'];
+saveas(gcf,filename,'png')
+
+
+
+consumption = std(c_values(:))
+employment = std(n_values(:))
+output = std(y_values(:))
+investment = std(i_values(:))
+wages = std(w_values(:))
+interest_rate = std(r_values(:))
+
+consumption = corr(c_values(:), y_values(:))
+employment = corr(n_values(:), y_values(:))
+output = 1
+investment = corr(i_values(:), y_values(:))
+wages = corr(w_values(:), y_values(:))
+interest_rate = corr(r_values(:), y_values(:))
+
+
+%% 
+
+% IRFs
+% Allows for a burn in period (shock_date can be 51, for example) to ensure
+% the IRFs start from steady state
+n_periods = 100;
+shock_date = 2;
+n_sims = 1;
+initial_z_values = zeros(1,n_sims);
+initial_k_values = zeros(1,n_sims) + log(kss);
+log_z_values = zeros(n_periods, n_sims);
+log_k_values= zeros(n_periods, n_sims) + initial_k_values;
+log_c_values= zeros(n_periods, n_sims);
+log_n_values= zeros(n_periods, n_sims);
+epsilon_values = zeros(n_periods, n_sims);
+epsilon_values(shock_date,1) = 0.05;
+
+
+for i=1:n_periods
+    if i == 1
+        log_z_values(i,:) = rho_z * initial_z_values + epsilon_values(i,:);
+        log_c_values(i,:) = log(css) + decision(2,2)*(initial_k_values - log(kss))+decision(3,2)*initial_z_values + decision(4,2)*epsilon_values(i,:);
+        log_n_values(i,:) = log(nss) + decision(2,3)*(initial_k_values - log(kss))+decision(3,3)*initial_z_values + decision(4,3)*epsilon_values(i,:);
+        log_k_values(i,:) = log(kss) + decision(2,4)*(initial_k_values - log(kss))+decision(3,4)*initial_z_values + decision(4,4)*epsilon_values(i,:);
+    else
+        log_z_values(i,:) = rho_z * log_z_values(i-1, :) + epsilon_values(i,:);
+        log_c_values(i,:) = log(css) + decision(2,2)*(log_k_values(i - 1,:) - log(kss))+decision(3,2)*log_z_values(i - 1,:) + decision(4,2)*epsilon_values(i,:);
+        log_n_values(i,:) = log(nss) + decision(2,3)*(log_k_values(i - 1,:) - log(kss))+decision(3,3)*log_z_values(i - 1,:) + decision(4,3)*epsilon_values(i,:);
+        log_k_values(i,:) = log(kss) + decision(2,4)*(log_k_values(i - 1,:) - log(kss))+decision(3,4)*log_z_values(i - 1,:) + decision(4,4)*epsilon_values(i,:);
+    end
+end
+
+k_values = exp(log_k_values);
+c_values = exp(log_c_values);
+n_values = exp(log_n_values);
+z_values = exp(log_z_values);
+
+y_values = z_values.*k_values.^alpha.*n_values.^(1-alpha);
+i_values = k_values - (1 - delta).*[exp(initial_k_values); k_values(1:end-1,:)];
+w_values = (1-alpha) .* z_values .* (k_values ./ n_values).^alpha;
+r_values = alpha .* z_values .* (n_values ./ k_values).^(1 - alpha) - delta;
+
+%% Plot IRF
+time=linspace(0,n_periods-shock_date+1,n_periods-shock_date+2)';
+figure('Name','IRF to TFP Shock')
+t = tiledlayout(2,4);
+nexttile
+plot(time, z_values(shock_date-1:n_periods,:),'LineWidth',3,'MarkerSize',10);
+title('TFP')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, c_values(shock_date-1:n_periods,:),'LineWidth',3,'MarkerSize',10);
+title('Consumption')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, w_values(shock_date-1:n_periods,:),'LineWidth',3,'MarkerSize',10);
+title('Wages')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, r_values(shock_date-1:n_periods,:),'LineWidth',3,'MarkerSize',10);
+title('Interest Rates')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, y_values(shock_date-1:n_periods,:),'LineWidth',3,'MarkerSize',10);
+title('Output')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, n_values(shock_date-1:n_periods,:),'LineWidth',3,'MarkerSize',10);
+title('Employment')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, k_values(shock_date-1:n_periods,:),'LineWidth',3,'MarkerSize',10);
+title('Capital')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+nexttile
+plot(time, i_values(shock_date-1:n_periods,:),'LineWidth',3,'MarkerSize',10);
+title('Investment')
+xlabel('Time','Fontsize',16)
+set(gca,'FontSize',16);
+grid on
+filename=['IRFs_for_Q5', '.png'];
+saveas(gcf,filename,'png')
